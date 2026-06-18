@@ -21,12 +21,13 @@ if uploaded_file is not None:
             raw_text = raw_bytes.decode('utf-8', errors='ignore')
             lines = raw_text.splitlines()
             
-            # Find where the actual table headers start dynamically
+           # Find where the actual table headers start dynamically
             header_index = 0
             for i, line in enumerate(lines):
                 cleaned_line = line.strip().upper()
-                # Dynamically match common transactional identifier columns
-                if any(k in cleaned_line for k in ['ID', 'INVOICE', 'TRANSACTION', 'CUSTOMER', 'DATE', 'AMOUNT']):
+                # A real header row must contain at least TWO valid data columns
+                matches = sum(1 for k in ['ID', 'INVOICE', 'NAME', 'DATE', 'PRICE', 'AMOUNT', 'CATEGORY', 'COUNTRY'] if k in cleaned_line)
+                if matches >= 2:
                     header_index = i
                     break
             
@@ -36,9 +37,8 @@ if uploaded_file is not None:
             # Reconstruct the clean text data buffer
             clean_csv_data = "\n".join(valid_lines)
             
-            # Read cleanly without tokenization/comma alignment errors from header metadata
+            # Read cleanly, automatically bypassing empty metadata rows
             df = pd.read_csv(io.StringIO(clean_csv_data), on_bad_lines='skip')
-        else:
             df = pd.read_excel(uploaded_file)
 
         # -------------------------------------------------------------
