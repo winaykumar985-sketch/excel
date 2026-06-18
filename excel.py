@@ -47,7 +47,7 @@ if uploaded_file is not None:
         # -------------------------------------------------------------
         # CORE CLEANING PIPELINE
         # -------------------------------------------------------------
-        # Drop completely blank metadata rows upfront before structural processing
+        # Drop completely blank metadata structural layers upfront
         df = df.dropna(how='all')
         df.columns = [str(col).strip() for col in df.columns]
         df = df.loc[:, ~df.columns.str.contains('^Unnamed', case=False, na=False)]
