@@ -21,7 +21,7 @@ if uploaded_file is not None:
             raw_text = raw_bytes.decode('utf-8', errors='ignore')
             lines = raw_text.splitlines()
             
-           # Find where the actual table headers start dynamically
+            # Find where the actual table headers start dynamically
             header_index = 0
             for i, line in enumerate(lines):
                 cleaned_line = line.strip().upper()
@@ -39,6 +39,7 @@ if uploaded_file is not None:
             
             # Read cleanly, automatically bypassing empty metadata rows
             df = pd.read_csv(io.StringIO(clean_csv_data), on_bad_lines='skip')
+        else:
             df = pd.read_excel(uploaded_file)
 
         # -------------------------------------------------------------
@@ -49,7 +50,7 @@ if uploaded_file is not None:
         
         # Clean up column headers (strip spaces, resolve Unnamed indicators)
         df.columns = [str(col).strip() for col in df.columns]
-        df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
+        df = df.loc[:, ~df.columns.str.contains('^Unnamed', case=False, na=False)]
         df.columns = [col.title() for col in df.columns]
         
         # Row-level string cleaning and processing
