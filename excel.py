@@ -67,19 +67,20 @@ if uploaded_file is not None:
                 return None
             for fmt in ['%Y-%m-%d', '%d-%m-%Y', '%m-%d-%Y', '%Y-%m-%d %H:%M:%S', '%d-%m-%y', '%m-%d-%y']:
                 try:
-                    return pd.to_datetime(val_clean, format=fmt).strftime('%Y-%m-%d')
-                except:
-                    continue
-            try:
-                return pd.to_datetime(val_clean, errors='coerce', dayfirst=True).strftime('%Y-%m-%d')
-            except:
-                return None
+                   # Drop completely blank rows first before enforcing strict structural cleaning
+        df = df.dropna(how='all')
 
-        # Base rule classifications (Fallback Mode)
-        numeric_cols = [col for col in df.columns if any(k in col.lower() for k in ['price', 'amount', 'sales', 'revenue', 'cost', 'total', 'count'])]
-        category_cols = [col for col in df.columns if any(k in col.lower() for k in ['category', 'item', 'product', 'country', 'location', 'status', 'basis', 'type', 'descr'])]
-        date_cols = [col for col in df.columns if 'date' in col.lower()]
-
+        # Standardize matching columns based on structured target schemas
+        for col in df.columns:
+            if col in date_cols:
+                df[col] = df[col].apply(robust_date_parser)
+            elif col in numeric_cols:
+                df[col] = df[col].astype(str).str.replace(r'[₹$,\s]', '', regex=True)
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+            else:
+                if df[col].dtype == 'object':
+                    df[col] = df[col].astype(str).str.strip()
+                    df[col] = df[col].replace({'nan': None, 'N/A': None, 'None': None, 'NaN': None, '': None, r'^\.$': '0'}, regex=True)
         # --- ADVANCED AI SCHEMA INTELLIGENCE INTERFACE ---
         if api_key:
             try:
