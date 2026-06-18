@@ -2,7 +2,7 @@ import pandas as pd
 import streamlit as st
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
-from openpyxl.chart import BarChart, LineChart, Reference
+from openpyxl.chart import BarChart, Reference
 import io
 import re
 
@@ -44,35 +44,38 @@ if uploaded_file is not None:
         df = df.loc[:, ~df.columns.str.contains('^Unnamed', case=False, na=False)]
         df.columns = [col.title() for col in df.columns]
         
+        # Safe multi-format date converter engine
+        def robust_date_parser(val):
+            if pd.isna(val):
+                return None
+            val_clean = str(val).strip().replace('.', '-').replace('/', '-')
+            if val_clean.lower() in ['none', 'nan', 'nat', '', 'n/a']:
+                return None
+            
+            # Direct text string matching rules for common entry structures
+            for fmt in ['%Y-%m-%d', '%d-%m-%Y', '%m-%d-%Y', '%Y-%m-%d %H:%M:%S', '%d-%m-%y', '%m-%d-%y']:
+                try:
+                    return pd.to_datetime(val_clean, format=fmt).strftime('%Y-%m-%d')
+                except:
+                    continue
+            try:
+                return pd.to_datetime(val_clean, errors='coerce', dayfirst=True).strftime('%Y-%m-%d')
+            except:
+                return None
+
         # Row-level string cleaning and processing
         for col in df.columns:
-            if df[col].dtype == 'object':
-                df[col] = df[col].astype(str).str.strip()
-                df[col] = df[col].replace({'nan': None, 'N/A': None, 'None': None, 'NaN': None, '': None})
-            
             col_lower = col.lower()
             
-            # Smart Multi-Format Date Engine
             if 'date' in col_lower:
-                def parse_mixed_date(val):
-                    if pd.isna(val) or str(val).strip().lower() in ['none', 'nan', 'nat', '']:
-                        return None
-                    val_str = str(val).strip().replace('.', '-').replace('/', '-')
-                    for fmt in ['%Y-%m-%d', '%d-%m-%Y', '%m-%d-%Y', '%Y-%m-%d %H:%M:%S', '%d-%m-%y', '%m-%d-%y']:
-                        try:
-                            return pd.to_datetime(val_str, format=fmt).strftime('%Y-%m-%d')
-                        except (ValueError, TypeError):
-                            continue
-                    try:
-                        return pd.to_datetime(val_str, errors='coerce', dayfirst=True).strftime('%Y-%m-%d')
-                    except:
-                        return None
-                df[col] = df[col].apply(parse_mixed_date)
-                
-            # Currency and Number Standardization
+                df[col] = df[col].apply(robust_date_parser)
             elif any(k in col_lower for k in ['price', 'amount', 'sales', 'revenue', 'cost']):
                 df[col] = df[col].astype(str).str.replace(r'[₹$,\s]', '', regex=True)
                 df[col] = pd.to_numeric(df[col], errors='coerce')
+            else:
+                if df[col].dtype == 'object':
+                    df[col] = df[col].astype(str).str.strip()
+                    df[col] = df[col].replace({'nan': None, 'N/A': None, 'None': None, 'NaN': None, '': None})
 
         df = df.dropna(how='all')
 
@@ -82,7 +85,7 @@ if uploaded_file is not None:
         date_cols = [col for col in df.columns if 'date' in col.lower()]
 
         # -------------------------------------------------------------
-        # STREAMLIT UI DASHBOARD REPLAY
+        # STREAMLIT UI DASHBOARD DISPLAY
         # -------------------------------------------------------------
         st.write("---")
         st.subheader("📈 Executive Performance Summary")
@@ -117,16 +120,13 @@ if uploaded_file is not None:
         # -------------------------------------------------------------
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            # Sheet 1: The Raw Data
             df.to_excel(writer, sheet_name='Clean Data', index=False)
             workbook = writer.book
             data_sheet = workbook['Clean Data']
             
-            # Create Sheet 2: The Chart Dashboard tab upfront
             dashboard_sheet = workbook.create_sheet(title="Executive Dashboard", index=0)
             dashboard_sheet.views.sheetView[0].showGridLines = True
             
-            # Styling definitions
             header_fill = PatternFill(start_color='1F4E78', end_color='1F4E78', fill_type='solid') 
             header_font = Font(name='Calibri', size=11, bold=True, color='FFFFFF')
             data_font = Font(name='Calibri', size=11)
@@ -136,7 +136,6 @@ if uploaded_file is not None:
             thin_side = Side(border_style="thin", color="D9D9D9")
             cell_border = Border(left=thin_side, right=thin_side, top=thin_side, bottom=thin_side)
             
-            # Format and Style Data Sheet Columns
             for col_num in range(1, len(df.columns) + 1):
                 cell = data_sheet.cell(row=1, column=col_num)
                 cell.fill = header_fill
@@ -149,12 +148,17 @@ if uploaded_file is not None:
                     cell.font = data_font
                     cell.border = cell_border
                     val_str = str(cell.value or '').lower()
-                    if isinstance(cell.value, (int, float)):
+                    
+                    # Lock formatting text states safely
+                    if isinstance(cell.value, (int, float)) and not (data_sheet.cell(row=1, column=col).value in ['Phone Number', 'Phone', 'Mobile']):
                         cell.alignment = right_align
                         cell.number_format = '#,##0.00'
                     elif re.match(r'^\d{4}-\d{2}-\d{2}$', val_str) or 'inv-' in val_str or 'trx-' in val_str:
                         cell.alignment = center_align
                     else:
+                        # Prevent Excel from turning formatted text codes into long scientific scientific numbers
+                        if data_sheet.cell(row=1, column=col).value in ['Phone Number', 'Phone', 'Mobile']:
+                            cell.number_format = '@'
                         cell.alignment = left_align
 
             for col in data_sheet.columns:
@@ -164,11 +168,6 @@ if uploaded_file is not None:
 
             # --- GENERATING EMBEDDED SUMMARY TABLES FOR EXCEL CHARTS ---
             if category_cols and numeric_cols:
-                # Find column indexes dynamically (1-indexed for Excel references)
-                cat_col_idx = df.columns.get_loc(category_cols[0]) + 1
-                num_col_idx = df.columns.get_loc(numeric_cols[0]) + 1
-                
-                # Write an explicit summary reference layout inside Dashboard for chart mapping
                 dashboard_sheet["A2"] = "KPI Dashboard Summary"
                 dashboard_sheet["A2"].font = Font(name='Calibri', size=16, bold=True, color='1F4E78')
                 
@@ -187,7 +186,6 @@ if uploaded_file is not None:
                     val_cell.number_format = '#,##0.00'
                     val_cell.alignment = right_align
                 
-                # Create Native Excel Bar Chart Object
                 chart1 = BarChart()
                 chart1.type = "col"
                 chart1.style = 10
@@ -195,7 +193,6 @@ if uploaded_file is not None:
                 chart1.y_axis.title = numeric_cols[0]
                 chart1.x_axis.title = category_cols[0]
                 
-                # Reference raw coordinates mapping inside summary area
                 data_ref = Reference(dashboard_sheet, min_col=2, min_row=4, max_row=4+len(summary_data))
                 cats_ref = Reference(dashboard_sheet, min_col=1, min_row=5, max_row=4+len(summary_data))
                 
@@ -203,8 +200,6 @@ if uploaded_file is not None:
                 chart1.set_categories(cats_ref)
                 chart1.height = 14
                 chart1.width = 22
-                
-                # Inject chart neatly into the Dashboard tab layout
                 dashboard_sheet.add_chart(chart1, "D4")
             else:
                 dashboard_sheet["A2"] = "Upload a transactional sheet with categorical data to populate charts automatically."
