@@ -63,8 +63,10 @@ if uploaded_file is not None:
             col_lower = col.lower()
             
             # 2. Smart Date Unification Engine
+            # 2. Smart Date Unification Engine
             if 'date' in col_lower:
-                df[col] = pd.to_datetime(df[col], errors='coerce').dt.strftime('%Y-%m-%d')
+                # Force Pandas to try multiple formats dynamically (Day first or Year first)
+                df[col] = pd.to_datetime(df[col], errors='coerce', dayfirst=True).dt.strftime('%Y-%m-%d')
                 df[col] = df[col].replace({'NaT': None})
                 
             # 3. Currency and Number Standardization
