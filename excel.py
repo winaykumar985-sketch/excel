@@ -15,12 +15,22 @@ if uploaded_file is not None:
     try:
         # Load data based on file type
         if uploaded_file.name.endswith('.csv'):
-            df = pd.read_csv(uploaded_file)
+            # Read raw lines first to find where the actual table headers start
+            raw_bytes = uploaded_file.getvalue()
+            lines = raw_bytes.decode('utf-8', errors='ignore').split('\n')
+            
+            skip_rows = 0
+            for i, line in enumerate(lines):
+                # If a line contains actual key column identifiers, that's our header row!
+                if 'INVOICE ID' in line or 'Invoice' in line or 'Transaction' in line or 'ID' in line:
+                    skip_rows = i
+                    break
+            
+            # Reload properly skipping the junk metadata headers
+            uploaded_file.seek(0)
+            df = pd.read_csv(uploaded_file, skiprows=skip_rows)
         else:
             df = pd.read_excel(uploaded_file)
-        
-        st.subheader("👀 Preview of Raw Data")
-        st.dataframe(df.head(10))
 
         # Core Cleaning Pipeline
         df = df.dropna(how='all')
